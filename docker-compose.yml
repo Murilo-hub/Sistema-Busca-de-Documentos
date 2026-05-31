@@ -1,0 +1,81 @@
+version: "3.9"
+
+services:
+
+  # ── Backend FastAPI ────────────────────────────────────────────────────────
+  backend:
+    build: ./sibd-backend
+    container_name: sibd_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./sibd-backend/.env
+    volumes:
+      - ./sibd-backend:/app          # hot-reload em desenvolvimento
+      - sibd_uploads:/app/data/uploads
+      - sibd_processed:/app/data/processed
+      - sibd_logs:/app/data/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    networks:
+      - sibd_net
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: sibd_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       sibd
+      POSTGRES_USER:     sibd_user
+      POSTGRES_PASSWORD: sibd_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - sibd_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sibd_user -d sibd"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sibd_net
+
+  # ── ChromaDB ───────────────────────────────────────────────────────────────
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: sibd_chromadb
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - sibd_chroma:/chroma/chroma
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+      ALLOW_RESET: "true"
+    networks:
+      - sibd_net
+
+  # ── Frontend (opcional — use apenas em produção; em dev rode npm run dev) ──
+  # frontend:
+  #   build: ./sibd-frontend
+  #   container_name: sibd_frontend
+  #   ports:
+  #     - "5173:80"
+  #   networks:
+  #     - sibd_net
+
+volumes:
+  sibd_pgdata:
+  sibd_chroma:
+  sibd_uploads:
+  sibd_processed:
+  sibd_logs:
+
+networks:
+  sibd_net:
+    driver: bridge
